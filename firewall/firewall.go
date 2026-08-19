@@ -6,8 +6,8 @@ import (
 	"errors"
 )
 
-// NetworkConfig is the complete input to externally observable emission plans.
-// Local SelectionState is intentionally not referenced by this type or Plan.
+// NetworkConfig contains every input that the emission planner is allowed to
+// use. Private reader state intentionally has no representation in this package.
 type NetworkConfig struct {
 	CellsPerEpoch uint32
 	CellSize      uint32
@@ -16,8 +16,14 @@ type NetworkConfig struct {
 }
 
 func (c NetworkConfig) Validate() error {
-	if c.CellsPerEpoch == 0 || c.CellSize == 0 || c.PeerSlots == 0 {
-		return errors.New("all network dimensions must be positive")
+	if c.CellsPerEpoch == 0 {
+		return errors.New("cells per epoch must be positive")
+	}
+	if c.CellSize == 0 {
+		return errors.New("cell size must be positive")
+	}
+	if c.PeerSlots == 0 {
+		return errors.New("peer slots must be positive")
 	}
 	return nil
 }
@@ -29,8 +35,7 @@ type Emission struct {
 	Size     uint32
 }
 
-// Plan is a pure function of network configuration and epoch. Its output cannot
-// vary with local reading/search/reconstruction state unless the API boundary is violated.
+// Plan is a pure function of public network configuration and epoch.
 func Plan(cfg NetworkConfig, epoch uint64) ([]Emission, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -38,45 +43,15 @@ func Plan(cfg NetworkConfig, epoch uint64) ([]Emission, error) {
 	out := make([]Emission, cfg.CellsPerEpoch)
 	for i := uint32(0); i < cfg.CellsPerEpoch; i++ {
 		h := sha256.New()
+		_, _ = h.Write([]byte("nomad-selection-firewall-plan-v1"))
 		_, _ = h.Write(cfg.PublicSeed[:])
-		var b [16]byte
+		var b [12]byte
 		binary.BigEndian.PutUint64(b[:8], epoch)
-		binary.BigEndian.PutUint32(b[8:12], i)
+		binary.BigEndian.PutUint32(b[8:], i)
 		_, _ = h.Write(b[:])
 		sum := h.Sum(nil)
 		peer := binary.BigEndian.Uint16(sum[:2]) % cfg.PeerSlots
 		out[i] = Emission{Epoch: epoch, Slot: i, PeerSlot: peer, Size: cfg.CellSize}
 	}
 	return out, nil
-}
-
-// SelectionState is private browser state. This package exposes no conversion
-// from SelectionState to NetworkConfig or Emission.
-type SelectionState struct {
-	PrivateQuery      string
-	SelectedBasins    []uint64
-	ReconstructionIDs [][32]byte
-}
-
-// SameObservableTrace asserts the core non-interference property for two worlds.
-func SameObservableTrace(cfg NetworkConfig, epochs uint64, _ SelectionState, _ SelectionState) (bool, error) {
-	for e := uint64(0); e < epochs; e++ {
-		a, err := Plan(cfg, e)
-		if err != nil {
-			return false, err
-		}
-		b, err := Plan(cfg, e)
-		if err != nil {
-			return false, err
-		}
-		if len(a) != len(b) {
-			return false, nil
-		}
-		for i := range a {
-			if a[i] != b[i] {
-				return false, nil
-			}
-		}
-	}
-	return true, nil
 }

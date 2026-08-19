@@ -1,21 +1,23 @@
 # nomad-selection-firewall
 
-Executable **non-interference boundary** for Nomad research.
+A narrow network-planning package for one Nomad architectural constraint: private reader state must not be an input to the public emission plan.
 
-The Selection Firewall is not a packet filter. It is an architectural rule: local reading/search/reconstruction state must have no code path into externally observable traffic scheduling.
+The useful property here is **API shape**, not a statistical result. The package contains only public scheduling inputs (`NetworkConfig`) and planned emissions (`Emission`). It has no query, selected-basin, reading-state or reconstruction-state type.
 
-This repository makes that rule explicit:
+## Implemented
 
-- `NetworkConfig` is the complete input to emission planning.
-- `SelectionState` is a separate type with no conversion to network scheduling.
-- `Plan` is a pure function of public network state and epoch.
-- million-epoch tests compare idle and active local worlds.
+- validation of public scheduling dimensions,
+- deterministic per-epoch emission plans,
+- fixed cell count/size in the plan,
+- deterministic peer-slot selection from public epoch state.
 
-A real browser integration would additionally require OS/process sandboxing and review of telemetry, storage, retransmission and cache side channels. This repository proves only the application-level API boundary it implements.
+## What this does not enforce
+
+This package is not a firewall process, sandbox or network stack. A browser, transport, cache, OS scheduler or caller can still leak private state through other channels. The package only makes one dependency harder to introduce accidentally: there is no private-selection input to `Plan`.
+
+Cross-process and packet-level non-interference belongs in browser integration and `nomad-testnet`.
 
 ```bash
-go test ./...
 go test -race ./...
 go vet ./...
-go run ./cmd/firewall-check
 ```
